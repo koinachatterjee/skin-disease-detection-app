@@ -1,7 +1,10 @@
 import streamlit as st
 import numpy as np
-import tensorflow as tf
-from tensorflow import keras
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+except ImportError:
+    import keras
 import pickle
 import json
 import cv2
