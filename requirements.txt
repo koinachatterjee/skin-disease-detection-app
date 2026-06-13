@@ -7,4 +7,3 @@ Pillow
 opencv-python-headless
 gdown
 keras
-tf-keras
