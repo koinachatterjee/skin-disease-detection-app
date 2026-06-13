@@ -91,20 +91,22 @@ IMG_SIZE = 224
 @st.cache_resource
 def load_model():
     try:
-        # Install tensorflow at runtime to bypass Python version issues
-        import subprocess
-        import sys
-        subprocess.check_call([
-            sys.executable, '-m', 'pip', 'install',
-            'tensorflow-cpu', '--quiet'
-        ])
-        import tensorflow as tf
-        model = tf.keras.models.load_model('best_skin_model.h5')
+        import onnxruntime as ort
+
+        # Download ONNX model from Google Drive if not present
+        if not os.path.exists('skin_model.onnx'):
+            gdown.download(
+                'https://drive.google.com/file/d/11aSFFVn4SnazgRwehKL7hRzOujxuBdvA/view?usp=drive_link',
+                'skin_model.onnx', quiet=False
+            )
+
+        session = ort.InferenceSession('skin_model.onnx')
+
         with open('label_encoder.pkl', 'rb') as f:
             le = pickle.load(f)
         with open('class_names.json', 'r') as f:
             ci = json.load(f)
-        return model, le, ci
+        return session, le, ci
     except Exception as e:
         st.error(f'Model load error: {e}')
         return None, None, None
@@ -116,8 +118,12 @@ def predict(image, model, le):
     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
     img = np.expand_dims(img, axis=0).astype(np.float32)
-    preds = model.predict(img, verbose=0)[0]
-    top3  = np.argsort(preds)[::-1][:3]
+
+    # ONNX inference
+    input_name = model.get_inputs()[0].name
+    preds = model.run(None, {input_name: img})[0][0]
+
+    top3 = np.argsort(preds)[::-1][:3]
     results = []
     for idx in top3:
         code = le.classes_[idx]
