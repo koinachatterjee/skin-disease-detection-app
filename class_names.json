@@ -1,0 +1,1 @@
+{"classes": ["AKIEC", "BCC", "BKL", "DF", "MEL", "NV", "VASC"], "disease_labels": {"MEL": "Melanoma", "NV": "Melanocytic Nevi", "BCC": "Basal Cell Carcinoma", "AKIEC": "Actinic Keratoses", "BKL": "Benign Keratosis", "DF": "Dermatofibroma", "VASC": "Vascular Lesions"}}
