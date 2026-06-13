@@ -8,32 +8,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from datetime import datetime
 import os
+import gdown
 
-# ─── Auto-download model from Google Drive ─────────────────────
-MODEL_PATH = 'best_skin_model.h5'
-GDRIVE_ID  = '1Tf8NvCJhPbbBADMKRJAG5VE9fmAmz_sM'
-
-if not os.path.exists(MODEL_PATH):
-    with st.spinner('Downloading model for first time... (1-2 mins)'):
-        try:
-            import gdown
-            gdown.download(
-                f'https://drive.google.com/uc?id={GDRIVE_ID}',
-                MODEL_PATH, quiet=False
-            )
-            st.success('Model downloaded!')
-        except Exception as e:
-            st.error(f'Model download failed: {e}')
-            st.stop()
-
-# ─── TensorFlow import ─────────────────────────────────────────
-try:
-    import tensorflow as tf
-    from tensorflow import keras
-except ImportError:
-    import keras
-
-# ─── Page config ───────────────────────────────────────────────
+# ─── Page config MUST be first streamlit call ──────────────────
 st.set_page_config(
     page_title="SkinSense AI",
     page_icon="🔬",
@@ -41,166 +18,116 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ─── Auto-download model from Google Drive ─────────────────────
+MODEL_PATH = 'best_skin_model.h5'
+GDRIVE_ID  = '1Tf8NvCJhPbbBADMKRJAG5VE9fmAmz_sM'
+
+if not os.path.exists(MODEL_PATH):
+    with st.spinner('Downloading AI model... please wait 1-2 mins'):
+        gdown.download(
+            f'https://drive.google.com/uc?id={GDRIVE_ID}',
+            MODEL_PATH, quiet=False
+        )
+
 # ─── Custom CSS ────────────────────────────────────────────────
 st.markdown("""
 <style>
-.main-title    { font-size:2.2rem; font-weight:600; color:#185FA5; margin-bottom:0; }
-.sub-title     { font-size:1rem; color:#666; margin-top:0; margin-bottom:2rem; }
-.result-card   { background:#f0f6ff; border-left:4px solid #185FA5;
-                 padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
-.warning-card  { background:#fff8e1; border-left:4px solid #BA7517;
-                 padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
-.danger-card   { background:#ffebee; border-left:4px solid #D85A30;
-                 padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
-.success-card  { background:#f0fff8; border-left:4px solid #1D9E75;
-                 padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
-.metric-box    { background:#fff; border:1px solid #e0e0e0;
-                 padding:1rem; border-radius:8px; text-align:center; }
-.section-head  { font-size:1.2rem; font-weight:600; color:#1a1a2e; margin:1.5rem 0 0.5rem; }
+.main-title   { font-size:2.2rem; font-weight:600; color:#185FA5; margin-bottom:0; }
+.sub-title    { font-size:1rem; color:#666; margin-top:0; margin-bottom:2rem; }
+.result-card  { background:#f0f6ff; border-left:4px solid #185FA5;
+                padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
+.warning-card { background:#fff8e1; border-left:4px solid #BA7517;
+                padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
+.danger-card  { background:#ffebee; border-left:4px solid #D85A30;
+                padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
+.success-card { background:#f0fff8; border-left:4px solid #1D9E75;
+                padding:1rem 1.5rem; border-radius:8px; margin:1rem 0; }
+.section-head { font-size:1.2rem; font-weight:600; color:#1a1a2e; margin:1.5rem 0 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Disease info database ─────────────────────────────────────
+# ─── Disease database ──────────────────────────────────────────
 DISEASE_INFO = {
-    'MEL': {
-        'name'     : 'Melanoma',
-        'severity' : 'HIGH',
-        'color'    : '#D85A30',
-        'referral' : True,
-        'treatment': [
-            'Immediate dermatologist consultation required',
-            'Surgical excision is the primary treatment',
-            'May require sentinel lymph node biopsy',
-            'Immunotherapy or targeted therapy if advanced',
-            'Regular full-body skin checks every 3-6 months'
-        ],
-        'description': 'Melanoma is the most serious type of skin cancer. Early detection is critical.'
-    },
-    'NV': {
-        'name'     : 'Melanocytic Nevi (Mole)',
-        'severity' : 'LOW',
-        'color'    : '#1D9E75',
-        'referral' : False,
-        'treatment': [
-            'Generally benign and requires no treatment',
-            'Monitor for changes in size, shape, or color',
-            'Use ABCDE rule: Asymmetry, Border, Color, Diameter, Evolution',
-            'Apply sunscreen SPF 30+ daily',
-            'Annual skin check recommended'
-        ],
-        'description': 'Common moles are usually harmless. Monitor for any changes using the ABCDE rule.'
-    },
-    'BCC': {
-        'name'     : 'Basal Cell Carcinoma',
-        'severity' : 'MEDIUM',
-        'color'    : '#BA7517',
-        'referral' : True,
-        'treatment': [
-            'Consult a dermatologist promptly',
-            'Mohs surgery is the most effective treatment',
-            'Radiation therapy for inoperable cases',
-            'Topical treatments for superficial BCC',
-            'Avoid sun exposure and use SPF 50+ sunscreen'
-        ],
-        'description': 'Most common skin cancer. Rarely spreads but needs prompt treatment.'
-    },
-    'AKIEC': {
-        'name'     : 'Actinic Keratoses',
-        'severity' : 'MEDIUM',
-        'color'    : '#BA7517',
-        'referral' : True,
-        'treatment': [
-            'See a dermatologist — may develop into cancer',
-            'Cryotherapy (freezing) is common treatment',
-            'Topical creams: 5-fluorouracil or imiquimod',
-            'Photodynamic therapy (PDT)',
-            'Daily sunscreen and sun-protective clothing'
-        ],
-        'description': 'Precancerous lesions caused by UV damage. Treatment prevents cancer progression.'
-    },
-    'BKL': {
-        'name'     : 'Benign Keratosis',
-        'severity' : 'LOW',
-        'color'    : '#1D9E75',
-        'referral' : False,
-        'treatment': [
-            'Usually harmless, no treatment necessary',
-            'Can be removed for cosmetic reasons',
-            'Cryotherapy or curettage if bothersome',
-            'Keep skin moisturized',
-            'Monitor for any rapid changes'
-        ],
-        'description': 'Non-cancerous skin growths that are very common with age.'
-    },
-    'DF': {
-        'name'     : 'Dermatofibroma',
-        'severity' : 'LOW',
-        'color'    : '#1D9E75',
-        'referral' : False,
-        'treatment': [
-            'Benign — no treatment required',
-            'Surgical removal if causing discomfort',
-            'Steroid injections may flatten the lesion',
-            'Avoid trauma to the area',
-            'Monitor for any size changes'
-        ],
-        'description': 'Common benign skin nodule. Harmless and usually requires no treatment.'
-    },
-    'VASC': {
-        'name'     : 'Vascular Lesion',
-        'severity' : 'LOW',
-        'color'    : '#185FA5',
-        'referral' : False,
-        'treatment': [
-            'Most are benign and need no treatment',
-            'Laser therapy for cosmetic removal',
-            'Pulsed dye laser is most effective',
-            'Sclerotherapy for certain vascular lesions',
-            'Consult dermatologist if growing rapidly'
-        ],
-        'description': 'Blood vessel abnormalities in the skin. Most are harmless lesions.'
-    }
+    'MEL':   {'name':'Melanoma',              'severity':'HIGH',   'color':'#D85A30', 'referral':True,
+              'description':'Most serious skin cancer. Early detection is critical.',
+              'treatment':['Immediate dermatologist consultation required',
+                           'Surgical excision is primary treatment',
+                           'May require immunotherapy if advanced',
+                           'Regular full-body skin checks every 3-6 months']},
+    'NV':    {'name':'Melanocytic Nevi (Mole)','severity':'LOW',   'color':'#1D9E75', 'referral':False,
+              'description':'Common moles are usually harmless.',
+              'treatment':['Generally benign, no treatment needed',
+                           'Monitor using ABCDE rule',
+                           'Apply sunscreen SPF 30+ daily',
+                           'Annual skin check recommended']},
+    'BCC':   {'name':'Basal Cell Carcinoma',  'severity':'MEDIUM', 'color':'#BA7517', 'referral':True,
+              'description':'Most common skin cancer. Rarely spreads but needs prompt treatment.',
+              'treatment':['Consult a dermatologist promptly',
+                           'Mohs surgery is most effective',
+                           'Avoid sun exposure, use SPF 50+']},
+    'AKIEC': {'name':'Actinic Keratoses',     'severity':'MEDIUM', 'color':'#BA7517', 'referral':True,
+              'description':'Precancerous lesions caused by UV damage.',
+              'treatment':['See dermatologist — may develop into cancer',
+                           'Cryotherapy is common treatment',
+                           'Daily sunscreen essential']},
+    'BKL':   {'name':'Benign Keratosis',      'severity':'LOW',   'color':'#1D9E75', 'referral':False,
+              'description':'Non-cancerous skin growths, very common with age.',
+              'treatment':['Usually harmless, no treatment necessary',
+                           'Can be removed for cosmetic reasons',
+                           'Keep skin moisturized']},
+    'DF':    {'name':'Dermatofibroma',        'severity':'LOW',   'color':'#1D9E75', 'referral':False,
+              'description':'Common benign skin nodule. Harmless.',
+              'treatment':['Benign — no treatment required',
+                           'Surgical removal if causing discomfort']},
+    'VASC':  {'name':'Vascular Lesion',       'severity':'LOW',   'color':'#185FA5', 'referral':False,
+              'description':'Blood vessel abnormalities. Most are harmless.',
+              'treatment':['Most are benign, no treatment needed',
+                           'Laser therapy for cosmetic removal']},
 }
 
 IMG_SIZE = 224
 
-# ─── Load model (cached) ───────────────────────────────────────
+# ─── Load model ────────────────────────────────────────────────
 @st.cache_resource
-def load_model_and_labels():
+def load_model():
     try:
-        model = keras.models.load_model('best_skin_model.h5')
+        # Import tensorflow inside function to isolate errors
+        import tensorflow as tf
+        model = tf.keras.models.load_model('best_skin_model.h5')
         with open('label_encoder.pkl', 'rb') as f:
             le = pickle.load(f)
         with open('class_names.json', 'r') as f:
-            class_info = json.load(f)
-        return model, le, class_info
+            ci = json.load(f)
+        return model, le, ci
     except Exception as e:
+        st.error(f'Model load error: {e}')
         return None, None, None
 
-# ─── Prediction function ───────────────────────────────────────
-def predict_disease(image, model, le):
+# ─── Predict ───────────────────────────────────────────────────
+def predict(image, model, le):
     img = np.array(image.convert('RGB'))
     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
     img = np.expand_dims(img, axis=0).astype(np.float32)
     preds = model.predict(img, verbose=0)[0]
-    top_idx = np.argsort(preds)[::-1][:3]
+    top3  = np.argsort(preds)[::-1][:3]
     results = []
-    for idx in top_idx:
+    for idx in top3:
         code = le.classes_[idx]
+        info = DISEASE_INFO.get(code, {})
         results.append({
             'code'      : code,
-            'name'      : DISEASE_INFO[code]['name'],
+            'name'      : info.get('name', code),
             'confidence': float(preds[idx]) * 100,
-            'severity'  : DISEASE_INFO[code]['severity'],
-            'referral'  : DISEASE_INFO[code]['referral'],
-            'color'     : DISEASE_INFO[code]['color'],
+            'severity'  : info.get('severity', 'LOW'),
+            'referral'  : info.get('referral', False),
+            'color'     : info.get('color', '#888'),
         })
     return results, preds, le.classes_
 
-# ─── Monitoring history ────────────────────────────────────────
-if 'monitoring_history' not in st.session_state:
-    st.session_state.monitoring_history = []
+# ─── Session state ─────────────────────────────────────────────
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
 # ─── Sidebar ───────────────────────────────────────────────────
 with st.sidebar:
@@ -210,7 +137,7 @@ with st.sidebar:
     page = st.radio("Navigation", [
         "🏠 Home & Diagnosis",
         "📅 Weekly Monitoring",
-        "ℹ️ About & Disclaimer"
+        "ℹ️ About"
     ])
     st.divider()
     st.markdown("**Model Info**")
@@ -220,143 +147,113 @@ with st.sidebar:
     st.divider()
     st.caption("For educational use only. Always consult a dermatologist.")
 
-# ─── Load model ────────────────────────────────────────────────
-model, le, class_info = load_model_and_labels()
+model, le, class_info = load_model()
 
 # ════════════════════════════════════════════════════════════════
-#  PAGE 1 — HOME & DIAGNOSIS
+# PAGE 1 — DIAGNOSIS
 # ════════════════════════════════════════════════════════════════
 if page == "🏠 Home & Diagnosis":
     st.markdown('<p class="main-title">🔬 SkinSense AI</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">Upload a skin image to receive an AI-powered diagnosis, severity assessment, and treatment recommendations.</p>', unsafe_allow_html=True)
-
-    if model is None:
-        st.error("Model files not found! Make sure best_skin_model.h5, label_encoder.pkl and class_names.json are present.")
-        st.stop()
+    st.markdown('<p class="sub-title">Upload a skin image for AI-powered diagnosis, severity assessment and treatment advice.</p>', unsafe_allow_html=True)
 
     col1, col2 = st.columns([1, 1], gap="large")
-
     with col1:
         st.markdown('<p class="section-head">📸 Upload Skin Image</p>', unsafe_allow_html=True)
-        uploaded = st.file_uploader(
-            "Choose a clear, well-lit photo of the skin concern",
-            type=['jpg','jpeg','png']
-        )
+        uploaded = st.file_uploader("Choose a clear close-up photo", type=['jpg','jpeg','png'])
 
         if uploaded:
             image = Image.open(uploaded)
-            st.image(image, caption="Uploaded image", use_container_width=True)
+            st.image(image, use_container_width=True)
+            add_monitor = st.checkbox("Add to weekly monitoring tracker")
+            spot_name   = st.text_input("Spot name", "Spot 1") if add_monitor else ""
+            run         = st.button("🔬 Analyse", type="primary", use_container_width=True)
 
-            st.markdown('<p class="section-head">Settings</p>', unsafe_allow_html=True)
-            sensitivity   = st.slider("Detection sensitivity", 0.5, 1.0, 0.7)
-            add_to_monitor = st.checkbox("Add to weekly monitoring tracker")
-            spot_name = ""
-            if add_to_monitor:
-                spot_name = st.text_input("Name this spot (e.g. Left arm mole)", "Spot 1")
+            if run:
+                if model is None:
+                    st.error("Model not loaded. Please refresh the page.")
+                else:
+                    with st.spinner("Analysing..."):
+                        results, all_preds, classes = predict(image, model, le)
+                    top = results[0]
+                    with col2:
+                        st.markdown('<p class="section-head">🩺 Result</p>', unsafe_allow_html=True)
+                        sev_map    = {'HIGH':'danger','MEDIUM':'warning','LOW':'success'}
+                        card_class = sev_map.get(top['severity'], 'result')
+                        info       = DISEASE_INFO.get(top['code'], {})
+                        st.markdown(f"""
+                        <div class="{card_class}-card">
+                            <h3 style="margin:0;color:{top['color']}">{top['name']}</h3>
+                            <p style="margin:4px 0 0">Confidence: <b>{top['confidence']:.1f}%</b> | Severity: <b>{top['severity']}</b></p>
+                            <p style="margin:8px 0 0;font-size:0.88rem;color:#444">{info.get('description','')}</p>
+                        </div>""", unsafe_allow_html=True)
 
-            analyze = st.button("🔬 Analyse Image", type="primary", use_container_width=True)
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Confidence", f"{top['confidence']:.1f}%")
+                        m2.metric("Severity",   top['severity'])
+                        m3.metric("Referral",   "YES ⚠️" if top['referral'] else "NO ✅")
 
-            if analyze:
-                with st.spinner("Analysing image..."):
-                    results, all_preds, classes = predict_disease(image, model, le)
+                        if top['referral']:
+                            st.markdown('<div class="danger-card">🚨 <b>Doctor Referral Recommended.</b> Please consult a certified dermatologist soon.</div>', unsafe_allow_html=True)
 
-                top = results[0]
+                        # Bar chart
+                        fig, ax = plt.subplots(figsize=(7, 2.5))
+                        names  = [r['name'][:22] for r in results]
+                        confs  = [r['confidence'] for r in results]
+                        colors = [r['color'] for r in results]
+                        bars   = ax.barh(names, confs, color=colors, alpha=0.85)
+                        for bar, val in zip(bars, confs):
+                            ax.text(bar.get_width()+0.5, bar.get_y()+bar.get_height()/2,
+                                    f'{val:.1f}%', va='center', fontsize=9)
+                        ax.set_xlim(0, 110)
+                        ax.set_xlabel('Confidence (%)')
+                        ax.invert_yaxis()
+                        fig.patch.set_alpha(0)
+                        plt.tight_layout()
+                        st.pyplot(fig)
 
-                with col2:
-                    st.markdown('<p class="section-head">🩺 Diagnosis Result</p>', unsafe_allow_html=True)
+                        st.markdown('<p class="section-head">💊 Treatment Advice</p>', unsafe_allow_html=True)
+                        for tip in info.get('treatment', []):
+                            st.markdown(f"• {tip}")
 
-                    sev_color  = {'HIGH':'danger','MEDIUM':'warning','LOW':'success'}
-                    card_class = sev_color.get(top['severity'], 'result')
-                    st.markdown(f"""
-                    <div class="{card_class}-card">
-                        <h3 style="margin:0;color:{top['color']}">{top['name']}</h3>
-                        <p style="margin:4px 0 0;font-size:0.9rem">Confidence: <b>{top['confidence']:.1f}%</b> &nbsp;|&nbsp; Severity: <b>{top['severity']}</b></p>
-                        <p style="margin:8px 0 0;font-size:0.88rem;color:#444">{DISEASE_INFO[top['code']]['description']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Confidence", f"{top['confidence']:.1f}%")
-                    m2.metric("Severity",   top['severity'])
-                    m3.metric("Referral",   "YES" if top['referral'] else "NO")
-
-                    if top['referral']:
-                        st.markdown("""
-                        <div class="danger-card">
-                            <b>🚨 Doctor Referral Recommended</b><br>
-                            Please consult a certified dermatologist as soon as possible.
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    st.markdown('<p class="section-head">📊 Top 3 Predictions</p>', unsafe_allow_html=True)
-                    fig, ax = plt.subplots(figsize=(7, 2.5))
-                    names  = [r['name'].split('(')[0].strip()[:20] for r in results]
-                    confs  = [r['confidence'] for r in results]
-                    colors = [r['color'] for r in results]
-                    bars   = ax.barh(names, confs, color=colors, alpha=0.85, edgecolor='white')
-                    for bar, val in zip(bars, confs):
-                        ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
-                                f'{val:.1f}%', va='center', fontsize=9)
-                    ax.set_xlim(0, 110)
-                    ax.set_xlabel('Confidence (%)')
-                    ax.invert_yaxis()
-                    fig.patch.set_alpha(0)
-                    plt.tight_layout()
-                    st.pyplot(fig)
-
-                    prob_df = pd.DataFrame({
-                        'Disease': [DISEASE_INFO[c]['name'] for c in classes],
-                        'Probability (%)': (all_preds * 100).round(2)
-                    }).sort_values('Probability (%)', ascending=False)
-                    st.dataframe(prob_df, use_container_width=True, hide_index=True)
-
-                    st.markdown('<p class="section-head">💊 Treatment Recommendations</p>', unsafe_allow_html=True)
-                    for tip in DISEASE_INFO[top['code']]['treatment']:
-                        st.markdown(f"• {tip}")
-
-                    if add_to_monitor and spot_name:
-                        st.session_state.monitoring_history.append({
-                            'spot'      : spot_name,
-                            'date'      : datetime.now().strftime('%Y-%m-%d'),
-                            'disease'   : top['name'],
-                            'code'      : top['code'],
-                            'confidence': top['confidence'],
-                            'severity'  : top['severity'],
-                        })
-                        st.success(f"Added to monitoring tracker for '{spot_name}'")
+                        if add_monitor and spot_name:
+                            st.session_state.history.append({
+                                'spot'      : spot_name,
+                                'date'      : datetime.now().strftime('%Y-%m-%d'),
+                                'disease'   : top['name'],
+                                'confidence': top['confidence'],
+                                'severity'  : top['severity'],
+                            })
+                            st.success(f"Added to monitoring for '{spot_name}'")
 
 # ════════════════════════════════════════════════════════════════
-#  PAGE 2 — WEEKLY MONITORING
+# PAGE 2 — MONITORING
 # ════════════════════════════════════════════════════════════════
 elif page == "📅 Weekly Monitoring":
     st.markdown('<p class="main-title">📅 Weekly Monitoring</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title">Track your skin condition over time.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">Track your condition over time — is it improving or worsening?</p>', unsafe_allow_html=True)
 
-    if not st.session_state.monitoring_history:
-        st.info("No monitoring data yet. Go to Home & Diagnosis, upload an image, check Add to weekly monitoring tracker, and analyse it.")
+    if not st.session_state.history:
+        st.info("No data yet. Go to Home & Diagnosis, upload an image and check 'Add to weekly monitoring tracker'.")
     else:
-        history_df   = pd.DataFrame(st.session_state.monitoring_history)
-        spots        = history_df['spot'].unique().tolist()
-        selected_spot = st.selectbox("Select spot to view", spots)
-        spot_df      = history_df[history_df['spot'] == selected_spot].reset_index(drop=True)
+        df      = pd.DataFrame(st.session_state.history)
+        spot    = st.selectbox("Select spot", df['spot'].unique())
+        spot_df = df[df['spot'] == spot].reset_index(drop=True)
 
         fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(spot_df.index, spot_df['confidence'],
-                marker='o', linewidth=2.5, color='#185FA5',
-                markersize=8, markerfacecolor='white', markeredgewidth=2)
+        ax.plot(spot_df.index, spot_df['confidence'], marker='o', linewidth=2.5,
+                color='#185FA5', markersize=8, markerfacecolor='white', markeredgewidth=2)
         ax.fill_between(spot_df.index, spot_df['confidence'], alpha=0.1, color='#185FA5')
 
         if len(spot_df) >= 2:
             trend = spot_df['confidence'].iloc[-1] - spot_df['confidence'].iloc[0]
-            trend_text = f"{'Worsening' if trend > 2 else 'Improving' if trend < -2 else 'Stable'} ({trend:+.1f}%)"
-            ax.set_title(f'Confidence Over Time — {trend_text}', fontweight='bold')
+            label = 'Worsening' if trend > 2 else 'Improving' if trend < -2 else 'Stable'
+            ax.set_title(f'{label} ({trend:+.1f}%)', fontweight='bold')
         else:
-            ax.set_title('Confidence Over Time (need 2+ entries for trend)')
+            ax.set_title('Need 2+ entries to show trend')
 
-        ax.axhline(y=70, color='orange', linestyle='--', linewidth=1, alpha=0.7, label='Medium risk')
-        ax.axhline(y=85, color='red',    linestyle='--', linewidth=1, alpha=0.7, label='High risk')
-        ax.set_xlabel('Week / Visit')
-        ax.set_ylabel('Model Confidence (%)')
+        ax.axhline(70, color='orange', linestyle='--', linewidth=1, label='Medium risk')
+        ax.axhline(85, color='red',    linestyle='--', linewidth=1, label='High risk')
+        ax.set_ylabel('Confidence (%)')
         ax.set_ylim(0, 105)
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.3)
@@ -365,41 +262,38 @@ elif page == "📅 Weekly Monitoring":
         st.pyplot(fig)
 
         if len(spot_df) >= 2:
-            trend = spot_df['confidence'].iloc[-1] - spot_df['confidence'].iloc[0]
             if trend > 2:
-                st.markdown('<div class="danger-card">Condition appears to be worsening. Please consult a dermatologist soon.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="danger-card">⚠️ Condition worsening — consult a dermatologist.</div>', unsafe_allow_html=True)
             elif trend < -2:
-                st.markdown('<div class="success-card">Condition appears to be improving. Continue monitoring weekly.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="success-card">✅ Condition improving — continue monitoring.</div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="warning-card">Condition is stable. Continue weekly monitoring.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="warning-card">➡️ Condition stable — continue weekly monitoring.</div>', unsafe_allow_html=True)
 
-        st.dataframe(spot_df[['date','disease','confidence','severity']],
-                     use_container_width=True, hide_index=True)
+        st.dataframe(spot_df[['date','disease','confidence','severity']], use_container_width=True, hide_index=True)
 
-        if st.button("Clear monitoring history"):
-            st.session_state.monitoring_history = []
+        if st.button("Clear history"):
+            st.session_state.history = []
             st.rerun()
 
 # ════════════════════════════════════════════════════════════════
-#  PAGE 3 — ABOUT
+# PAGE 3 — ABOUT
 # ════════════════════════════════════════════════════════════════
-elif page == "ℹ️ About & Disclaimer":
+elif page == "ℹ️ About":
     st.markdown('<p class="main-title">ℹ️ About SkinSense AI</p>', unsafe_allow_html=True)
     st.markdown("""
     ### Project Overview
-    SkinSense AI is a major project developed as part of the AI InternsElite program (Batch June 2026).
-    It addresses the global shortage of dermatologists — **3 billion people** worldwide lack access to skin care specialists.
+    SkinSense AI addresses the global shortage of dermatologists — **3 billion people** worldwide lack access to skin care specialists.
 
     ### How It Works
     1. User uploads a photo of a skin concern
-    2. A CNN model (MobileNetV2) trained on HAM10000 analyses it
-    3. The app returns a diagnosis, confidence score, severity level, and treatment recommendations
-    4. High-risk conditions trigger an automatic doctor referral alert
-    5. Weekly monitoring tracks whether a condition improves or worsens over time
+    2. CNN model (MobileNetV2) trained on HAM10000 analyses it
+    3. Returns diagnosis, confidence, severity and treatment advice
+    4. High-risk conditions trigger automatic doctor referral alert
+    5. Weekly monitoring tracks whether condition improves or worsens
 
-    ### Disease Categories Detected
-    | Code | Disease | Risk Level |
-    |------|---------|------------|
+    ### Disease Categories
+    | Code | Disease | Risk |
+    |------|---------|------|
     | MEL  | Melanoma | HIGH |
     | NV   | Melanocytic Nevi | LOW |
     | BCC  | Basal Cell Carcinoma | MEDIUM |
@@ -409,14 +303,11 @@ elif page == "ℹ️ About & Disclaimer":
     | VASC | Vascular Lesions | LOW |
 
     ### Tech Stack
-    - **Model:** MobileNetV2 (Transfer Learning) + TensorFlow/Keras
-    - **Dataset:** HAM10000 (10,000+ dermatoscopy images)
-    - **Web App:** Streamlit
-    - **Image Processing:** OpenCV, PIL
+    - Model: MobileNetV2 + TensorFlow/Keras
+    - Dataset: HAM10000 (10,000+ dermatoscopy images)
+    - App: Streamlit | Image: OpenCV, PIL
 
-    ### Medical Disclaimer
-    > This application is built for **educational purposes only**. Always consult a qualified dermatologist for any skin concerns.
+    > ⚠️ **For educational purposes only.** Always consult a qualified dermatologist.
 
-    ---
-    **Developer:** Koina Chatterjee | Roll No: AIML-A6/9951 | Batch: June 2026
+    **Developer:** Koina Chatterjee | AIML-A6/9951 | Batch June 2026
     """)
