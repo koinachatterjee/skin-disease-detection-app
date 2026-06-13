@@ -91,7 +91,13 @@ IMG_SIZE = 224
 @st.cache_resource
 def load_model():
     try:
-        # Import tensorflow inside function to isolate errors
+        # Install tensorflow at runtime to bypass Python version issues
+        import subprocess
+        import sys
+        subprocess.check_call([
+            sys.executable, '-m', 'pip', 'install',
+            'tensorflow-cpu', '--quiet'
+        ])
         import tensorflow as tf
         model = tf.keras.models.load_model('best_skin_model.h5')
         with open('label_encoder.pkl', 'rb') as f:
@@ -102,6 +108,7 @@ def load_model():
     except Exception as e:
         st.error(f'Model load error: {e}')
         return None, None, None
+
 
 # ─── Predict ───────────────────────────────────────────────────
 def predict(image, model, le):
