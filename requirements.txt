@@ -2,8 +2,5 @@ streamlit
 numpy
 pandas
 matplotlib
-scikit-learn
 Pillow
-opencv-python-headless
 gdown
-keras
