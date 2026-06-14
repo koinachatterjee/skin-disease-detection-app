@@ -6,4 +6,4 @@ Pillow
 opencv-python-headless
 gdown
 scikit-learn
-onnxruntime
+tensorflow==2.19.1
